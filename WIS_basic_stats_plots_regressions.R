@@ -57,14 +57,41 @@ SWW_spot <- SWW_spot %>%
                location = str_replace_all(location, "_-_", "-")) %>%
         select(location, datetime, determinand, units, result, WTW, sww_x, sww_y, sww_z))
 names(SWW_spot) <- SWW_spot %>%
+  map(., ~ pull(distinct(., location))) # gives each tibble the name of the location
+
+
+
+
+
+# add week and water year
+
+SWW_spot <- SWW_spot %>%
+  map(.,mutate(., week = strftime(datetime, format = "%V"),
+                  water_year(datetime, origin = "usgs"))  %>%
+        select(location, datetime, determinand, units, result, WTW, week, water_year,sww_x, sww_y, sww_z))
+names(SWW_spot) <- SWW_spot %>%
   map(., ~ pull(distinct(., location)))
 
-
-
+dat$water_year <- water_year(dat$datetime, origin = "usgs")   # reference to water year starting on the 1/10
+dat$week <- as.factor(strftime(dat$datetime, format = "%V")) # reference to number of week of the year
 
 # bind into single list element per location
 SWW_spot <- split(SWW_spot, names(SWW_spot)) %>%
   map(bind_rows)
+
+
+# get summary statistics per hydrological year and parameter for all sites
+summary <- dat %>%
+  group_by(water_year, determinand) %>%
+  summarise(mean = mean(result, .drop = TRUE),
+            n = sum(!is.na(result)),
+            min = min(result),
+            max = max(result)) %>%
+  group_split() # makes a list for each
+
+
+
+
 
 # Select sites of interest -----------------------------------------------------
 
@@ -72,7 +99,7 @@ SWW_spot <- split(SWW_spot, names(SWW_spot)) %>%
 list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
 
 # remove the sites not to be used
-sites_keep <- grep("BRATTON", names(SWW_spot), value=TRUE) # makes a list of the names of tibble that contain "Bratton"
+sites_keep <- grep("HOREDOWN", names(SWW_spot), value=TRUE) # makes a list of the names of tibble that contain "Bratton"
 
 # bind all the tibbles and keep only what I want
 dat <- bind_rows(SWW_spot) %>%
@@ -81,20 +108,22 @@ dat <- bind_rows(SWW_spot) %>%
 
 # Add references to water years etc --------------------------------------------
 
-install.packages("lfstat")
+
+if (!require('lfstat')) install.packages('lfstat'); library('lfstat')
 dat$water_year <- water_year(dat$datetime, origin = "usgs")   # reference to water year starting on the 1/10
 dat$week <- as.factor(strftime(dat$datetime, format = "%V")) # reference to number of week of the year
 
 
 # group and make a table of summary statistics ---------------------------------
 
-summary_WIS <- dat %>%
-  group_by(location,water_year, determinand) %>%
+summary_HOR <- dat %>%
+  group_by(water_year, determinand) %>%
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)),
             min = min(result),
             max = max(result)) %>%
   group_split() # makes a list for each
+
 
 
 
@@ -104,6 +133,29 @@ test <- dat %>%
   group_by(location, water_year, week, determinand) %>%
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)))
+
+list_sites
+
+
+# Plot -------------------------------------------------------------------------
+
+ggplot
+
+test_2 <- dat %>%
+  filter(location=="BRATTON_FLEMING_WTW-RAW_WATER-RESERVOIR_UNSPECIFIED")
+
+ggplot(test_2, aes (x=datetime, y=result))+
+  geom_point()
+
+
+sut476 <- counts_norm %>% filter(gene==) 
+
+sut476_wt <- sut476 %>% filter(strain=="WT")
+
+ggplot(sut476_wt,aes(x=time,y=log_norm_count)) +
+  geom_point() +
+  geom_smooth(method="lm")
+
 
 
 ################################################################################
