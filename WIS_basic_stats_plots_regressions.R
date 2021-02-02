@@ -18,7 +18,7 @@ library(ggplot2)
 library(stringr)
 library(unpivotr) # for dealing with the SWW spot data
 
-# Paths to data -----------------------------------------------------------
+# Paths to data ----------------------------------------------------------------
 
 # NOTE THIS CURRENTLY ONLY WORKS WHEN THERE IS ONLY ONE FILE IN THE FOLDER - NEEDS AMENDING TO IDENTIFY THE ONE FILE ONLY
 SWW_spot_folder <- "Data_Input/SWW_Spot"
@@ -27,7 +27,7 @@ SWW_spot_files <- paste("upstream thinking Exe Uni_BFlemming_Horedown_Northcombe
 SWW_spot_path <- paste(SWW_spot_folder, SWW_spot_files, sep = "/")
 
 
-# Bring SWW Spot WQ data into list and tidy -------------------------------
+# Bring SWW Spot WQ data into list and tidy ------------------------------------
 
 # Read in SWW spot sample data
 SWW_spot <- read_csv(SWW_spot_path, col_names = FALSE) # we'll name the cols later
@@ -59,29 +59,77 @@ SWW_spot <- SWW_spot %>%
 names(SWW_spot) <- SWW_spot %>%
   map(., ~ pull(distinct(., location)))
 
+
+
+
 # bind into single list element per location
 SWW_spot <- split(SWW_spot, names(SWW_spot)) %>%
   map(bind_rows)
 
-###############################################################################
+# Select sites of interest -----------------------------------------------------
 
 # get a list of all the sites
 list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
 
 # remove the sites not to be used
-sites_keep <- grep("BRA", names(SWW_spot), value=TRUE) # makes a list of the names of tibble that contain "Bratton"
+sites_keep <- grep("BRATTON", names(SWW_spot), value=TRUE) # makes a list of the names of tibble that contain "Bratton"
 
 # bind all the tibbles and keep only what I want
-test <- bind_rows(SWW_spot) %>%
-  #filter(location %in% sites_keep)                # this makes a whole table with all the data I want to keep!
-
-# this makes a df using all the conditions
-
-#test_2 <- bind_rows(SWW_spot) %>%
-  #filter(location %in% sites_keep) %>%
-  #group_by(location)%>%   # split  
-  #group_split()           # group as a list of items.
+dat <- bind_rows(SWW_spot) %>%
+  filter(location %in% sites_keep)                # this makes a whole table with all the data I want to keep!
 
 
+# Add references to water years etc --------------------------------------------
+
+install.packages("lfstat")
+dat$water_year <- water_year(dat$datetime, origin = "usgs")   # reference to water year starting on the 1/10
+dat$week <- as.factor(strftime(dat$datetime, format = "%V")) # reference to number of week of the year
 
 
+# group and make a table of summary statistics ---------------------------------
+
+summary_WIS <- dat %>%
+  group_by(location,water_year, determinand) %>%
+  summarise(mean = mean(result, .drop = TRUE),
+            n = sum(!is.na(result)),
+            min = min(result),
+            max = max(result)) %>%
+  group_split() # makes a list for each
+
+
+
+# summarize data per week and plot
+
+test <- dat %>%
+  group_by(location, water_year, week, determinand) %>%
+  summarise(mean = mean(result, .drop = TRUE),
+            n = sum(!is.na(result)))
+
+
+################################################################################
+# this selects locations and then makes a list of tibbles
+test_2 <- bind_rows(SWW_spot) %>%
+  filter(location %in% sites_keep) %>%
+  group_by(location)%>%   # split  
+  group_split()           # group as a list of items.
+
+# This is to group into list of tibbles
+test_2 <- dat %>%
+  group_by(location)%>%   # Identify the grouping variable
+  group_split()           # group as a list of items.
+
+# This is to group into list of tibbles
+test_2 <- bind_rows(dat) %>%
+  group_by(location)%>%   # split  
+  group_split()           # group as a list of items.
+
+
+# check if the data needs to be converted to GMT?
+#dat$datetime  <- as.POSIXct(strptime(as.character(dat$datetime),                # N.B. strptime() converts from character to POSIXct time
+#"%d/%m/%Y %H:%M",                          # Format of origional text (toggle on/off as required)
+"%Y-%m-%d %H:%M:%S",                      # Format of origional text (toggle on/off as required)
+tz = "UTC"))  
+
+# make a similar table just for the raw water
+# remove the sites not to be used
+list_raw <- sites_keep[grepl("RAW_WATER", sites_keep)] # 
