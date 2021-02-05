@@ -17,6 +17,35 @@ library(tibble)
 library(ggplot2)
 library(stringr)
 library(unpivotr) # for dealing with the SWW spot data
+if (!require('lfstat')) install.packages('lfstat'); library('lfstat')
+
+# Set up the plot theme and colour palette -------------------------------------
+
+R_grad_UsT <- colorRampPalette(c(
+  rgb(229, 109, 11, max=255),   
+  rgb(248, 171, 16, max=255),   
+  rgb(253, 231, 37, max=255), 
+  rgb(180, 222, 80, max=255), 
+  rgb(108, 179, 63, max=255),  
+  rgb(102, 158, 144, max=255),  
+  rgb(0, 132, 145, max=255),  
+  rgb(0, 104, 139, max=255)))
+
+theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
+                             panel.grid.minor = element_blank(),
+                             axis.text = element_text(size = 8),
+                             axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, colour = "gray28", margin = margin(t=5)),
+                             axis.text.y = element_text(angle = 0, vjust = 0.5, colour = "gray28", margin = margin(r=5)),
+                             axis.title.x = element_text(size = 8, margin = margin(t=5)),
+                             axis.title.y = element_text(size = 8, margin = margin(r=5)),
+                             panel.grid = element_blank(),
+                             plot.margin = unit(c(0.25, 0.25, 0.25, 0.25), units = , "cm"),
+                             plot.title = element_text(size = 8, vjust = 1, hjust = 0.5),
+                             legend.title = element_text(size = 8),
+                             legend.text = element_text(size = 8),
+                             legend.key.size = unit(1,"line"),
+                             legend.position = c(0.85, 0.9)))
+
 
 # Paths to data ----------------------------------------------------------------
 
@@ -60,69 +89,84 @@ names(SWW_spot) <- SWW_spot %>%
   map(., ~ pull(distinct(., location))) # gives each tibble the name of the location
 
 
+# get a list of all the sites - this needs to be done at this stage!
+list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
+
+
+# add week and water year in a long table --------------------------------------
+
+SWW_spot <- bind_rows(SWW_spot) %>%
+  mutate(water_year =  water_year(datetime, origin = "usgs"),  # reference to water year starting on the 1/10)
+         week = as.factor(strftime(datetime, format = "%V"))) 
+
+# returns it into a list of tibbles
+SWW_spot <- SWW_spot %>% 
+  group_by(location) %>%
+  group_split()   # splits it
+#names(SWW_spot) <- SWW_spot %>%
+  #map(., ~ pull(distinct(., location))) # renames it with the name of the location - do not use otherwise it breaks the code later
 
 
 
-# add week and water year
+# Calculate summary statistics per hydrological year and parameter for all sites ------
 
-SWW_spot <- SWW_spot %>%
-  map(.,mutate(., week = strftime(datetime, format = "%V"),
-                  water_year(datetime, origin = "usgs"))  %>%
-        select(location, datetime, determinand, units, result, WTW, week, water_year,sww_x, sww_y, sww_z))
-names(SWW_spot) <- SWW_spot %>%
-  map(., ~ pull(distinct(., location)))
-
-dat$water_year <- water_year(dat$datetime, origin = "usgs")   # reference to water year starting on the 1/10
-dat$week <- as.factor(strftime(dat$datetime, format = "%V")) # reference to number of week of the year
-
-# bind into single list element per location
-SWW_spot <- split(SWW_spot, names(SWW_spot)) %>%
-  map(bind_rows)
-
-
-# get summary statistics per hydrological year and parameter for all sites
-summary <- dat %>%
-  group_by(water_year, determinand) %>%
+summary <- SWW_spot %>%
+  group_by(location, determinand, units, water_year) %>%
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)),
             min = min(result),
-            max = max(result)) %>%
-  group_split() # makes a list for each
+            max = max(result)) 
+
+# group per location to save one table for each
+
+summary <- summary %>%
+  group_by(location) %>%
+  group_split()   # makes into a list per location
+
+names(summary) <- summary %>%
+  map(., ~ pull(distinct(., location))) # renames it with the name of the location
+
+
+# output as csv files for 'extracted data' folder use (not run) - CANNOT FIND A WAY TO GET TO SAVE IT IN THE APPROPRIATE FOLDER
+for (i in seq_along(summary)){
+  filename = paste0(names(summary[i]), "_2010-20_stats.csv")
+  write_csv(summary[[i]], filename)
+}
 
 
 
 
+# Plots for HOREDOWN -----------------------------------------------------------
 
 # Select sites of interest -----------------------------------------------------
 
 # get a list of all the sites
-list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
+
 
 # remove the sites not to be used
-sites_keep <- grep("HOREDOWN", names(SWW_spot), value=TRUE) # makes a list of the names of tibble that contain "Bratton"
 
-# bind all the tibbles and keep only what I want
+# identify the site to keep in the list
+print(list_sites)
+sites_keep <- list_sites[grepl("HOREDOWN",list_sites)] # makes a list of the names of tibble that contain "Bratton"
+
+
+
+# select and bind all the tibbles and keep only what I want
 dat <- bind_rows(SWW_spot) %>%
   filter(location %in% sites_keep)                # this makes a whole table with all the data I want to keep!
 
-
-# Add references to water years etc --------------------------------------------
-
-
-if (!require('lfstat')) install.packages('lfstat'); library('lfstat')
-dat$water_year <- water_year(dat$datetime, origin = "usgs")   # reference to water year starting on the 1/10
-dat$week <- as.factor(strftime(dat$datetime, format = "%V")) # reference to number of week of the year
 
 
 # group and make a table of summary statistics ---------------------------------
 
 summary_HOR <- dat %>%
-  group_by(water_year, determinand) %>%
+  group_by(determinand, units, water_year) %>%
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)),
             min = min(result),
-            max = max(result)) %>%
-  group_split() # makes a list for each
+            max = max(result)) 
+#%>%
+  #group_split() # makes a list for each
 
 
 
@@ -130,7 +174,7 @@ summary_HOR <- dat %>%
 # summarize data per week and plot
 
 test <- dat %>%
-  group_by(location, water_year, week, determinand) %>%
+  group_by(water_year, week, determinand, units) %>%  # location needs adding as a parameter if this is to be applied to several locations
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)))
 
@@ -139,22 +183,12 @@ list_sites
 
 # Plot -------------------------------------------------------------------------
 
-ggplot
-
-test_2 <- dat %>%
-  filter(location=="BRATTON_FLEMING_WTW-RAW_WATER-RESERVOIR_UNSPECIFIED")
-
-ggplot(test_2, aes (x=datetime, y=result))+
+unique(test$determinand)
+ggplot(dat, aes (x=datetime, y=result, color ="Geosmin  Total" ))+
   geom_point()
 
+aggregate( Total_Blue_Green ~ Month + Year , Algae , mean )
 
-sut476 <- counts_norm %>% filter(gene==) 
-
-sut476_wt <- sut476 %>% filter(strain=="WT")
-
-ggplot(sut476_wt,aes(x=time,y=log_norm_count)) +
-  geom_point() +
-  geom_smooth(method="lm")
 
 
 
