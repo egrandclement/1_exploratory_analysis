@@ -100,8 +100,9 @@ list_sites <- names(SWW_spot) # identifies the names of each tibble within the l
 # NEEDS TO ACCOUNT FOR THE CHANGE IN BST / GMT
 
 
-# add week and water year in a long table --------------------------------------
 
+
+# add week and water year in a long table --------------------------------------
 SWW_spot <- bind_rows(SWW_spot) %>%
   mutate(water_year =  water_year(datetime, origin = "usgs"),  # reference to water year starting on the 1/10)
          week = as.factor(strftime(datetime, format = "%V"))) 
@@ -117,7 +118,6 @@ SWW_spot <- bind_rows(SWW_spot) %>%
 
 
 # Calculate summary statistics per hydrological year and parameter for all sites ------
-
 summary <- SWW_spot %>%
   group_by(location, determinand, units, water_year) %>%
   summarise(mean = mean(result, .drop = TRUE),
@@ -146,6 +146,8 @@ for (i in seq_along(summary)){
 
 # Plots for HOREDOWN -----------------------------------------------------------
 
+
+
 # Select sites of interest -----------------------------------------------------
 
 # remove the sites not to be used
@@ -157,12 +159,10 @@ sites_keep <- list_sites[grepl("HOREDOWN",list_sites)] # makes a list of the nam
 # select and bind all the tibbles and keep only what I want
 dat <- bind_rows(SWW_spot) %>%
   filter(location %in% sites_keep)                # this makes a whole table with all the data I want to keep!
-
 dat$month <- format(dat$datetime, format="%m")
 
 
 # group and make a table of summary statistics ---------------------------------
-
 summary_HOR <- dat %>%
   group_by(determinand, units, water_year) %>%
   summarise(mean = mean(result, .drop = TRUE),
@@ -175,20 +175,20 @@ summary_HOR <- dat %>%
 
 
 
-# summarize data per week and plot
+# summarize data per month and plot
 
-test <- dat %>%
+Sum_horedown <- dat %>%
   group_by(water_year, month, determinand, units) %>%  # location needs adding as a parameter if this is to be applied to several locations
   summarise(mean = mean(result, .drop = TRUE),
-            n = sum(!is.na(result)))
-
-list_sites
+            n = sum(!is.na(result)),
+            min = min(result),
+            max = max(result))
 
 
 # ALGAE PLOTS  the proportion of blue green per week as a TS ---------------------------
 
 # select the determinands to be plotted (together) and select the matching data to be plotted
-det_list <- unique(test$determinand)
+det_list <- unique(dat$determinand)
 algae_list <- det_list[grepl("Algae",det_list)]                                 # makes a list of the names of tibble that contain "Bratton"
 algae_list <- algae_list[-grep("Comments", algae_list)]
 
@@ -205,34 +205,39 @@ ggplot(dat_alg, aes(x=datetime, y=result)) +
 # Plot the proporition of each algae type per month
 
 aggreg <- dat_alg %>%
-  group_by(water_year, month) %>%
-  mutate(total = sum(result)) %>%                                               #calculates the sum of each monthly values
-  ungroup() %>%
-  group_by(determinand,water_year, month, total) %>%
+  group_by(determinand,water_year, month) %>%
   summarise (mean = mean(result, na.rm=TRUE),
-             percent = round(mean/total*100, digits=1))                         # calculates their proportion
- 
+             n = sum(!is.na(result)),
+             min = min(result, na.rm=TRUE),
+             max = max(result, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(water_year, month) %>%
+  mutate(total = sum(mean),
+         percent = round(mean/total*100, digits=1),
+         month_year = paste0(month, '/', water_year)) 
 
 
 
 
-dat_alg <- spread(dat_alg,determinand, result) #makes wide format
+# plot of the spread between algae species on a bar chart
+P1 <- ggplot(aggreg, aes(fill=determinand, y=percent, x=month_year)) + 
+  scale_y_continuous(expand = c(0, 0),labels = scales::percent)+
+  geom_bar(position="fill", stat="identity", width=1)+
+  xlab("Date")+
+  ylab('Relative abundance of Algae Groups')+
+  scale_fill_manual(values=rev(R_grad_UsT(6)), name = "Algae Group:", labels = c("Blue Green", "Chrysophytes","Diatoms", "Green", "Other","Agal Unicells"))+
+  #scale_x_discrete(limits=ATotal$Month_Year)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.margin = unit(c(0.1, 0.5, 0.5, 0.5), units = , "cm"),
+        legend.position="bottom")
 
 
-# plot
-ggplot() +
-  geom_point(dat_alg, aes (x=datetime, y=Algae_Blue_Green))+
-  geom_point() 
+ggplot(aggreg, aes (x=month_year, y=mean))+
+  geom_point() +
+  facet_wrap(vars(determinand), nrow = 6, ncol = 1) # somehow doesn't plot the high values where they should be
 
+aggreg$month_year <- as.factor(aggreg$month_year)
 
-ggplot(dat_alg) +
-  geom_point(aes (x=datetime, y=Algae_Blue_Green))+
-  geom_point(aes (x=datetime, y=Algae_Chrysophytes, colour = "red")) 
-
-
-
-
-names(dat_alg)
 
 
 str(dat_alg)
