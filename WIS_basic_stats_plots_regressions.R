@@ -83,10 +83,14 @@ SWW_spot <- SWW_spot %>%
                WTW = word(location), #first word in location
                location = str_squish(location), # remove random spaces
                location = str_replace_all(location, " ", "_"),
-               location = str_replace_all(location, "_-_", "-")) %>%
+               location = str_replace_all(location, "_-_", "-"),
+               determinand = str_replace_all(determinand," ", "_" ), #replaces series of white spaces by "_"
+               determinand = str_replace_all(determinand,"___", "_" ), # Replaces new dashes (either 2 or 3 added in the line above) to 1
+               determinand = str_replace_all(determinand,"__", "_" )) %>%
         select(location, datetime, determinand, units, result, WTW, sww_x, sww_y, sww_z))
 names(SWW_spot) <- SWW_spot %>%
   map(., ~ pull(distinct(., location))) # gives each tibble the name of the location
+
 
 
 # get a list of all the sites - this needs to be done at this stage!
@@ -101,6 +105,7 @@ list_sites <- names(SWW_spot) # identifies the names of each tibble within the l
 SWW_spot <- bind_rows(SWW_spot) %>%
   mutate(water_year =  water_year(datetime, origin = "usgs"),  # reference to water year starting on the 1/10)
          week = as.factor(strftime(datetime, format = "%V"))) 
+
 
 # returns it into a list of tibbles
 #SWW_spot <- SWW_spot %>% 
@@ -180,20 +185,57 @@ test <- dat %>%
 list_sites
 
 
-# Plot the proportion of blue green per week as a TS ---------------------------
+# ALGAE PLOTS  the proportion of blue green per week as a TS ---------------------------
 
 # select the determinands to be plotted (together) and select the matching data to be plotted
 det_list <- unique(test$determinand)
-algae_list <- det_list[grepl("Algae",det_list)] # makes a list of the names of tibble that contain "Bratton"
+algae_list <- det_list[grepl("Algae",det_list)]                                 # makes a list of the names of tibble that contain "Bratton"
 algae_list <- algae_list[-grep("Comments", algae_list)]
 
 # Filter the appropriate date and make into a wide format
 dat_alg <- dat %>%
-  filter(determinand %in% algae_list) 
-dat_alg <- spread(dat_alg,determinand, result)
-dat_alg <- dat_alg [dat_alg$units == "cells/ml",]      # removes data that are not in cells/ml
+  filter(determinand %in% algae_list, 
+         units == "cells/ml")                                                   #removes what is not in the same unit
+
+# Simple plot
+ggplot(dat_alg, aes(x=datetime, y=result)) +
+  geom_point()+
+  facet_wrap("determinand", nrow = 6, ncol = 1)                                 # this shows the overwhelming presence of Bluegreen algae
+
+# Plot the proporition of each algae type per month
+
+aggreg <- dat_alg %>%
+  group_by(water_year, month) %>%
+  mutate(total = sum(result)) %>%                                               #calculates the sum of each monthly values
+  ungroup() %>%
+  group_by(determinand,water_year, month, total) %>%
+  summarise (mean = mean(result, na.rm=TRUE),
+             percent = round(mean/total*100, digits=1))                         # calculates their proportion
+ 
 
 
+
+
+dat_alg <- spread(dat_alg,determinand, result) #makes wide format
+
+
+# plot
+ggplot() +
+  geom_point(dat_alg, aes (x=datetime, y=Algae_Blue_Green))+
+  geom_point() 
+
+
+ggplot(dat_alg) +
+  geom_point(aes (x=datetime, y=Algae_Blue_Green))+
+  geom_point(aes (x=datetime, y=Algae_Chrysophytes, colour = "red")) 
+
+
+
+
+names(dat_alg)
+
+
+str(dat_alg)
 # aggregate the data per week / water_year
 
 # plot
