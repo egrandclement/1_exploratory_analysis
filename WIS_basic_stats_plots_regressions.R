@@ -93,6 +93,9 @@ names(SWW_spot) <- SWW_spot %>%
 list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
 
 
+# NEEDS TO ACCOUNT FOR THE CHANGE IN BST / GMT
+
+
 # add week and water year in a long table --------------------------------------
 
 SWW_spot <- bind_rows(SWW_spot) %>%
@@ -100,9 +103,9 @@ SWW_spot <- bind_rows(SWW_spot) %>%
          week = as.factor(strftime(datetime, format = "%V"))) 
 
 # returns it into a list of tibbles
-SWW_spot <- SWW_spot %>% 
-  group_by(location) %>%
-  group_split()   # splits it
+#SWW_spot <- SWW_spot %>% 
+  #group_by(location) %>%
+  #group_split()   # splits it
 #names(SWW_spot) <- SWW_spot %>%
   #map(., ~ pull(distinct(., location))) # renames it with the name of the location - do not use otherwise it breaks the code later
 
@@ -140,21 +143,17 @@ for (i in seq_along(summary)){
 
 # Select sites of interest -----------------------------------------------------
 
-# get a list of all the sites
-
-
 # remove the sites not to be used
 
 # identify the site to keep in the list
 print(list_sites)
 sites_keep <- list_sites[grepl("HOREDOWN",list_sites)] # makes a list of the names of tibble that contain "Bratton"
 
-
-
 # select and bind all the tibbles and keep only what I want
 dat <- bind_rows(SWW_spot) %>%
   filter(location %in% sites_keep)                # this makes a whole table with all the data I want to keep!
 
+dat$month <- format(dat$datetime, format="%m")
 
 
 # group and make a table of summary statistics ---------------------------------
@@ -174,18 +173,33 @@ summary_HOR <- dat %>%
 # summarize data per week and plot
 
 test <- dat %>%
-  group_by(water_year, week, determinand, units) %>%  # location needs adding as a parameter if this is to be applied to several locations
+  group_by(water_year, month, determinand, units) %>%  # location needs adding as a parameter if this is to be applied to several locations
   summarise(mean = mean(result, .drop = TRUE),
             n = sum(!is.na(result)))
 
 list_sites
 
 
-# Plot -------------------------------------------------------------------------
+# Plot the proportion of blue green per week as a TS ---------------------------
 
-unique(test$determinand)
-ggplot(dat, aes (x=datetime, y=result, color ="Geosmin  Total" ))+
-  geom_point()
+# select the determinands to be plotted (together) and select the matching data to be plotted
+det_list <- unique(test$determinand)
+algae_list <- det_list[grepl("Algae",det_list)] # makes a list of the names of tibble that contain "Bratton"
+algae_list <- algae_list[-grep("Comments", algae_list)]
+
+# Filter the appropriate date and make into a wide format
+dat_alg <- dat %>%
+  filter(determinand %in% algae_list) 
+dat_alg <- spread(dat_alg,determinand, result)
+dat_alg <- dat_alg [dat_alg$units == "cells/ml",]      # removes data that are not in cells/ml
+
+
+# aggregate the data per week / water_year
+
+# plot
+ggplot(dat_alg, aes (x=datetime, y=result))+
+  geom_point() +
+  facet_wrap(vars(determinand))
 
 aggregate( Total_Blue_Green ~ Month + Year , Algae , mean )
 
