@@ -3,10 +3,10 @@
 # Basic plot are then made
 
 
+# 0. Housekeeping --------------------------------------------------------------
 
 
-
-# Load packages -----------------------------------------------------------
+# Load packages ----------------------------------------------------------------
 
 library(readr)
 library(dplyr)
@@ -46,6 +46,8 @@ theme_set(theme_bw() + theme(panel.grid.major = element_blank(),
                              legend.key.size = unit(1,"line"),
                              legend.position = c(0.85, 0.9)))
 
+
+# 1. Data download and general tidy --------------------------------------------
 
 # Paths to data ----------------------------------------------------------------
 
@@ -93,20 +95,56 @@ names(SWW_spot) <- SWW_spot %>%
 
 
 
+# test adding values in ng/L
+
+# Remove duplicates that have Same WTW, datetime, determinand and units but different values) - WORKS
+SWW_spot <-  bind_rows(SWW_spot) %>%
+  distinct(location, datetime, determinand, units, .keep_all = TRUE)
+
+str(SWW_spot)
+
+# needs to calculate values in a different units but that doesn't work somehow.
+test <- SWW_spot %>% 
+  mutate(new_result_ngL = case_when(
+    units == "mg/l"| determinand == "Geosmin" ~ result * 1000000,
+    TRUE ~ result)) %>% 
+  mutate(new_units = case_when(
+    unit == "mg/l"| determinand == "Geosmin" ~ "ng/l",
+    TRUE ~ unit)))
+
+test <- SWW_spot %>% 
+  mutate(added = case_when (
+    determinand = "Geosmin_Total" | units = "ug/l" ~ result * 1000,
+    TRUE ~ result)) %>%
+  mutate(new_units = case_when(
+    unit == "ug/l"| determinand == "Geosmin_Total" ~ "ng/l",
+    TRUE ~ units))
+
+
+str(SWW)
 # get a list of all the sites - this needs to be done at this stage!
 list_sites <- names(SWW_spot) # identifies the names of each tibble within the large list
 
 
-# NEEDS TO ACCOUNT FOR THE CHANGE IN BST / GMT
+# NEEDS TO ACCOUNT FOR THE CHANGE IN BST / GMT ---------------------------------
 
 
-
+# 2. Calculate general statistics for all water sources in this file -----------
 
 # add week and water year in a long table --------------------------------------
 SWW_spot <- bind_rows(SWW_spot) %>%
   mutate(water_year =  water_year(datetime, origin = "usgs"),  # reference to water year starting on the 1/10)
-         week = as.factor(strftime(datetime, format = "%V"))) 
+         week = as.factor(strftime(datetime, format = "%V")))
+         
+names(SWW_spot)   
+   
+# needs sorting - doesn't work - NEEDS IDENTIFYIG DUPLICATES AND MULTIPLYING FOR UNITS     
 
+
+
+
+
+  
 
 # returns it into a list of tibbles
 #SWW_spot <- SWW_spot %>% 
@@ -115,7 +153,7 @@ SWW_spot <- bind_rows(SWW_spot) %>%
 #names(SWW_spot) <- SWW_spot %>%
   #map(., ~ pull(distinct(., location))) # renames it with the name of the location - do not use otherwise it breaks the code later
 
-
+str(SWW_spot)
 
 # Calculate summary statistics per hydrological year and parameter for all sites ------
 summary <- SWW_spot %>%
@@ -126,7 +164,6 @@ summary <- SWW_spot %>%
             max = max(result)) 
 
 # group per location to save one table for each
-
 summary <- summary %>%
   group_by(location) %>%
   group_split()   # makes into a list per location
@@ -144,7 +181,7 @@ for (i in seq_along(summary)){
 
 
 
-# Plots for HOREDOWN -----------------------------------------------------------
+# 3. Analysis for HOREDOWN -----------------------------------------------------------
 
 
 
@@ -162,7 +199,7 @@ dat <- bind_rows(SWW_spot) %>%
 dat$month <- format(dat$datetime, format="%m")
 
 
-# group and make a table of summary statistics ---------------------------------
+# 3.1.  group and make a table of summary statistics ---------------------------
 summary_HOR <- dat %>%
   group_by(determinand, units, water_year) %>%
   summarise(mean = mean(result, .drop = TRUE),
@@ -176,7 +213,6 @@ summary_HOR <- dat %>%
 
 
 # summarize data per month and plot
-
 Sum_horedown <- dat %>%
   group_by(water_year, month, determinand, units) %>%  # location needs adding as a parameter if this is to be applied to several locations
   summarise(mean = mean(result, .drop = TRUE),
@@ -185,7 +221,7 @@ Sum_horedown <- dat %>%
             max = max(result))
 
 
-# ALGAE PLOTS  the proportion of blue green per week as a TS ---------------------------
+# 3.2.  ALGAE PLOTS  the proportion of blue green per week as a TS -------------
 
 # select the determinands to be plotted (together) and select the matching data to be plotted
 det_list <- unique(dat$determinand)
@@ -202,7 +238,7 @@ ggplot(dat_alg, aes(x=datetime, y=result)) +
   geom_point()+
   facet_wrap("determinand", nrow = 6, ncol = 1)                                 # this shows the overwhelming presence of Bluegreen algae
 
-# Plot the proporition of each algae type per month
+# Calculate and Plot the proporition of each algae type per month
 
 aggreg <- dat_alg %>%
   group_by(determinand,water_year, month) %>%
@@ -214,7 +250,9 @@ aggreg <- dat_alg %>%
   group_by(water_year, month) %>%
   mutate(total = sum(mean),
          percent = round(mean/total*100, digits=1),
-         month_year = paste0(month, '/', water_year)) 
+         month_year = as.yearmon(paste(water_year, month), "%Y %m")) 
+
+
 
 
 
@@ -231,13 +269,10 @@ P1 <- ggplot(aggreg, aes(fill=determinand, y=percent, x=month_year)) +
         plot.margin = unit(c(0.1, 0.5, 0.5, 0.5), units = , "cm"),
         legend.position="bottom")
 
-
+# plot the monthly mean per algay type
 ggplot(aggreg, aes (x=month_year, y=mean))+
   geom_point() +
   facet_wrap(vars(determinand), nrow = 6, ncol = 1) # somehow doesn't plot the high values where they should be
-
-aggreg$month_year <- as.factor(aggreg$month_year)
-
 
 
 str(dat_alg)
